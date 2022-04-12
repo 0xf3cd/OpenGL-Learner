@@ -1,1 +1,1 @@
-# OpenGL-Learner
+# WebGPU-Learner
