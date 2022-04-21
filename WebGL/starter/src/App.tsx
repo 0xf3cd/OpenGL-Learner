@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useEffect } from 'react';
+import vertexShader from './shaders/vertex.glsl';
+import fragmentShader from './shaders/fragment.glsl';
 
 const CANVAS_CONFIG = {
   width: 750,
@@ -12,18 +14,23 @@ const main = (): void => {
 
   // Initialize the GL context
   const gl = canvas.getContext('webgl2');
-  console.log(gl);
 
   // Only continue if WebGL is available and working
   if (gl === null) {
     alert('Unable to initialize WebGL. Your browser or machine may not support it.');
     return;
+  } else {
+    console.log('WebGL object created.');
+    console.log(gl);
   }
 
-  // Set clear color to black, fully opaque
+  // Set clear color, fully opaque
   gl.clearColor(0.6, 0.75, 0.75, 1.0);
   // Clear the color buffer with specified clear color
   gl.clear(gl.COLOR_BUFFER_BIT);
+
+  console.log(vertexShader);
+  console.log(fragmentShader);
 };
 
 export const App = (): JSX.Element => {
