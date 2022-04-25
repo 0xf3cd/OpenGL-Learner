@@ -1,79 +1,16 @@
 import React, { useEffect } from 'react';
+
+import { CANVAS_CONFIG } from './common/Constants';
+import {
+  createGlContext,
+  loadShader,
+  createProgram,
+} from './common/Helpers';
+
 import vertexShaderSrc from './shaders/vertex.glsl';
 import fragmentShaderSrc from './shaders/fragment.glsl';
 
-// Ref: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Getting_started_with_WebGL
-
-const CANVAS_CONFIG = {
-  width: 750,
-  height: 750,
-  id: 'glCanvas',
-  rgba: {
-    r: 0.125,
-    g: 0.25,
-    b: 0.1,
-    a: 1,
-  },
-};
-
-const createGlContext = (canvasId: string): WebGL2RenderingContext | null => {
-  // Initialize the GL context
-  const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
-  if (!canvas) {
-    console.error('Could not find the canvas element.');
-    return null;
-  }
-  const gl = canvas.getContext('webgl2');
-  if (!gl) {
-    console.error('Unable to initialize WebGL. Your browser or machine may not support it.');
-    return null;
-  }
-  return gl;
-};
-
-const loadShader = (gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null => {
-  // Create the shader.
-  const shader = gl.createShader(type);
-  if (!shader) {
-    console.error('Could not create shader.');
-    return null;
-  }
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-
-  // Check the compile result.
-  const status = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
-  if (!status) {
-    const info = gl.getShaderInfoLog(shader);
-    gl.deleteShader(shader);
-    console.error(`An error occurred when compiling the shader:\n${info}`);
-    return null;
-  }
-
-  return shader; // Safely return the shader!
-};
-
-const createProgram = (gl: WebGL2RenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram | null => {
-  const program = gl.createProgram();
-  if (!program) {
-    console.error('Could not create the program.');
-    return null;
-  }
-
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-
-  const status = gl.getProgramParameter(program, gl.LINK_STATUS);
-  if (!status) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    console.error(`An error occurred when linking the program:\n${info}`);
-    return null;
-  }
-
-  return program;
-};
+import { mat4 } from 'gl-matrix';
 
 const main = (): void => {
   // Create the GL context.
@@ -81,12 +18,6 @@ const main = (): void => {
   if (!gl) { return; }
   console.log('WebGL object created.');
   console.log(gl);
-
-  // Set clear color, fully opaque
-  const rgba = CANVAS_CONFIG.rgba;
-  gl.clearColor(rgba.r, rgba.g, rgba.b, rgba.a);
-  // Clear the color buffer with specified clear color
-  gl.clear(gl.COLOR_BUFFER_BIT);
 
   // Create the shaders.
   const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vertexShaderSrc);
@@ -97,9 +28,80 @@ const main = (): void => {
   const shaderProgram = createProgram(gl, vertexShader, fragmentShader);
   if (!shaderProgram) { return; }
 
-  console.log(vertexShader);
-  console.log(fragmentShader);
-  console.log(shaderProgram);
+  // Create the descriptor.
+  const descriptor = {
+    program: shaderProgram,
+    attribLocations: {
+      vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+    },
+    uniformLocations: {
+      projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+      modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+    },
+  };
+
+  // Initialize and bind the buffer.
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  const positions: Array<number> = [
+    1.0,  1.0,
+   -1.0,  1.0,
+    1.0, -1.0,
+   -1.0, -1.0,
+  ];
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+  const buffers = {
+    position: positionBuffer,
+  };
+
+  // Draw the scene.
+  const rgba = CANVAS_CONFIG.rgba;
+  gl.clearColor(rgba.r, rgba.g, rgba.b, rgba.a);
+  gl.clearDepth(1.0);       // Clear everything.
+  gl.enable(gl.DEPTH_TEST); // Enable depth testing.
+  gl.depthFunc(gl.LEQUAL);  // Near things obscure far things.
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const fieldOfView = 45 * Math.PI / 180;
+  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+  const zNear = 0.1;
+  const zFar = 100.0;
+
+  const projectionMatrix = mat4.create();
+  mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+
+  const modelViewMatrix = mat4.create();
+  mat4.translate(modelViewMatrix, modelViewMatrix, [
+    -0.0, 0.0, -6.0,
+  ]); // Move the drawing position a bit.
+
+  // Configure the vertex buffer.
+  {
+    const numComponents = 2;  // Pull out 2 values per iteration.
+    const type = gl.FLOAT;    // The data in the buffer is 32bit floats.
+    const normalize = false;  // Don't normalize.
+    const stride = 0;         // 0 => use type and numComponents above.
+    const offset = 0;         // How many bytes inside the buffer to start from.
+  
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+    gl.vertexAttribPointer(
+      descriptor.attribLocations.vertexPosition, 
+      numComponents, type, normalize, stride, offset);
+    gl.enableVertexAttribArray(
+      descriptor.attribLocations.vertexPosition);
+  }
+
+  gl.useProgram(descriptor.program);
+  gl.uniformMatrix4fv(
+    descriptor.uniformLocations.projectionMatrix, false, projectionMatrix);
+  gl.uniformMatrix4fv(
+    descriptor.uniformLocations.modelViewMatrix, false, modelViewMatrix);
+
+  {
+    const offset = 0;
+    const vertexCount = positions.length / 2;
+    gl.drawArrays(gl.TRIANGLE_STRIP, offset, vertexCount);
+  }
 };
 
 export const App = (): JSX.Element => {
